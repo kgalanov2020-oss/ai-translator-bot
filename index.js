@@ -26,13 +26,37 @@ const userLanguages = loadLanguages();
 
 const languages = {
   en: "English",
+  zh: "Chinese",
+  hi: "Hindi",
+  hu: "Hungarian",
   es: "Spanish",
-  de: "German",
   fr: "French",
+  de: "German",
   it: "Italian",
+  pt: "Portuguese",
   tr: "Turkish",
   ar: "Arabic",
   ru: "Russian",
+  ja: "Japanese",
+  ko: "Korean",
+  vi: "Vietnamese",
+  th: "Thai",
+  id: "Indonesian",
+  ms: "Malay",
+  fa: "Persian",
+  he: "Hebrew",
+  pl: "Polish",
+  cs: "Czech",
+  sk: "Slovak",
+  ro: "Romanian",
+  bg: "Bulgarian",
+  uk: "Ukrainian",
+  nl: "Dutch",
+  sv: "Swedish",
+  no: "Norwegian",
+  da: "Danish",
+  fi: "Finnish",
+  el: "Greek",
 };
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
@@ -56,25 +80,56 @@ bot.onText(/\/start/, async (msg) => {
       : "Выберите язык перевода:",
     {
       reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "🇺🇸 English", callback_data: "lang_en" },
-            { text: "🇪🇸 Español", callback_data: "lang_es" },
-          ],
-          [
-            { text: "🇩🇪 Deutsch", callback_data: "lang_de" },
-            { text: "🇫🇷 Français", callback_data: "lang_fr" },
-          ],
-          [
-            { text: "🇮🇹 Italiano", callback_data: "lang_it" },
-            { text: "🇹🇷 Türkçe", callback_data: "lang_tr" },
-          ],
-          [
-            { text: "🇦🇪 Arabic", callback_data: "lang_ar" },
-            { text: "🇷🇺 Russian", callback_data: "lang_ru" },
-          ],
+      inline_keyboard: [
+        [
+          { text: "🇺🇸 English", callback_data: "lang_en" },
+          { text: "🇨🇳 Chinese", callback_data: "lang_zh" },
         ],
-      },
+        [
+          { text: "🇮🇳 Hindi", callback_data: "lang_hi" },
+          { text: "🇭🇺 Hungarian", callback_data: "lang_hu" },
+        ],
+        [
+          { text: "🇪🇸 Spanish", callback_data: "lang_es" },
+          { text: "🇫🇷 French", callback_data: "lang_fr" },
+        ],
+        [
+          { text: "🇩🇪 German", callback_data: "lang_de" },
+          { text: "🇮🇹 Italian", callback_data: "lang_it" },
+        ],
+        [
+          { text: "🇵🇹 Portuguese", callback_data: "lang_pt" },
+          { text: "🇹🇷 Turkish", callback_data: "lang_tr" },
+        ],
+        [
+          { text: "🇦🇪 Arabic", callback_data: "lang_ar" },
+          { text: "🇷🇺 Russian", callback_data: "lang_ru" },
+        ],
+        [
+          { text: "🇯🇵 Japanese", callback_data: "lang_ja" },
+          { text: "🇰🇷 Korean", callback_data: "lang_ko" },
+        ],
+        [
+          { text: "🇻🇳 Vietnamese", callback_data: "lang_vi" },
+          { text: "🇹🇭 Thai", callback_data: "lang_th" },
+        ],
+        [
+          { text: "🇮🇩 Indonesian", callback_data: "lang_id" },
+          { text: "🇲🇾 Malay", callback_data: "lang_ms" },
+        ],
+        [
+          { text: "🇵🇱 Polish", callback_data: "lang_pl" },
+          { text: "🇺🇦 Ukrainian", callback_data: "lang_uk" },
+        ],
+        [
+          { text: "🇳🇱 Dutch", callback_data: "lang_nl" },
+          { text: "🇬🇷 Greek", callback_data: "lang_el" },
+        ],
+        [
+          { text: "🇸🇪 Swedish", callback_data: "lang_sv" },
+          { text: "🇫🇮 Finnish", callback_data: "lang_fi" },
+        ],
+      ]      },
     }
   );
 });
