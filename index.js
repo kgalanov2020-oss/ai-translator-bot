@@ -52,12 +52,38 @@ const languages = {
 
 const keyboard = Object.entries(languages).reduce((rows, [code, name], i) => {
   if (i % 2 === 0) rows.push([]);
-  rows[rows.length - 1].push({ text: name, callback_data: `lang_${code}` });
+  rows[rows.length - 1].push({
+    text: name,
+    callback_data: `lang_${code}`,
+  });
   return rows;
 }, []);
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
-  polling: true,
+  polling: {
+    interval: 1000,
+    autoStart: true,
+    params: {
+      timeout: 10,
+    },
+  },
+});
+
+async function shutdown(signal) {
+  console.log(`Received ${signal}. Stopping polling...`);
+  try {
+    await bot.stopPolling();
+  } catch (error) {
+    console.error("Error stopping polling:", error);
+  }
+  process.exit(0);
+}
+
+process.once("SIGINT", () => shutdown("SIGINT"));
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+
+bot.on("polling_error", (error) => {
+  console.error("Polling error:", error.message);
 });
 
 const openai = new OpenAI({
@@ -91,6 +117,7 @@ async function downloadTelegramFile(fileId, outputPath) {
     url: fileLink,
     method: "GET",
     responseType: "stream",
+    timeout: 30000,
   });
 
   const writer = fs.createWriteStream(outputPath);
@@ -100,6 +127,14 @@ async function downloadTelegramFile(fileId, outputPath) {
     writer.on("finish", resolve);
     writer.on("error", reject);
   });
+}
+
+function cleanupFiles(files) {
+  for (const file of files) {
+    if (fs.existsSync(file)) {
+      fs.unlinkSync(file);
+    }
+  }
 }
 
 bot.onText(/\/start/, async (msg) => {
@@ -123,6 +158,13 @@ bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
   const langCode = query.data.replace("lang_", "");
 
+  if (!languages[langCode]) {
+    await bot.answerCallbackQuery(query.id, {
+      text: "Неизвестный язык",
+    });
+    return;
+  }
+
   userLanguages[chatId] = languages[langCode];
   saveLanguages(userLanguages);
 
@@ -140,12 +182,10 @@ bot.on("message", async (msg) => {
   if (msg.text && msg.text !== "/start") {
     try {
       await bot.sendMessage(chatId, `📝 Перевожу на ${targetLanguage}...`);
-
       const translatedText = await translateText(msg.text, targetLanguage);
-
       await bot.sendMessage(chatId, translatedText);
     } catch (error) {
-      console.error(error);
+      console.error("Text translation error:", error);
       await bot.sendMessage(chatId, "❌ Ошибка перевода текста.");
     }
   }
@@ -159,7 +199,10 @@ bot.on("photo", async (msg) => {
   const imagePath = path.resolve(`image_${timestamp}.jpg`);
 
   try {
-    await bot.sendMessage(chatId, `🖼 Распознаю текст на картинке и перевожу на ${targetLanguage}...`);
+    await bot.sendMessage(
+      chatId,
+      `🖼 Распознаю текст на картинке и перевожу на ${targetLanguage}...`
+    );
 
     const photo = msg.photo[msg.photo.length - 1];
     await downloadTelegramFile(photo.file_id, imagePath);
@@ -192,13 +235,12 @@ bot.on("photo", async (msg) => {
     });
 
     const translatedText = result.choices[0].message.content;
-
     await bot.sendMessage(chatId, `🖼 Перевод с картинки:\n\n${translatedText}`);
-
-    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
   } catch (error) {
-    console.error(error);
+    console.error("Image OCR error:", error);
     await bot.sendMessage(chatId, "❌ Ошибка распознавания картинки.");
+  } finally {
+    cleanupFiles([imagePath]);
   }
 });
 
@@ -221,7 +263,10 @@ bot.on("voice", async (msg) => {
       model: "gpt-4o-mini-transcribe",
     });
 
-    const translatedText = await translateText(transcription.text, targetLanguage);
+    const translatedText = await translateText(
+      transcription.text,
+      targetLanguage
+    );
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
@@ -243,12 +288,10 @@ bot.on("voice", async (msg) => {
     await bot.sendVoice(chatId, oggPath, {
       caption: `📝 ${translatedText}`,
     });
-
-    [inputPath, mp3Path, oggPath].forEach((file) => {
-      if (fs.existsSync(file)) fs.unlinkSync(file);
-    });
   } catch (error) {
-    console.error(error);
+    console.error("Voice translation error:", error);
     await bot.sendMessage(chatId, "❌ Ошибка обработки голосового.");
+  } finally {
+    cleanupFiles([inputPath, mp3Path, oggPath]);
   }
 });
