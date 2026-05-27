@@ -10,21 +10,27 @@ import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const languagesFile = "userLanguages.json";
+const outputModesFile = "userOutputModes.json";
 
-function loadLanguages() {
-  if (fs.existsSync(languagesFile)) {
-    return JSON.parse(fs.readFileSync(languagesFile, "utf8"));
+const DEFAULT_LANGUAGE = "Russian";
+const DEFAULT_OUTPUT_MODE = "text";
+
+function loadJson(file) {
+  if (fs.existsSync(file)) {
+    return JSON.parse(fs.readFileSync(file, "utf8"));
   }
   return {};
 }
 
-function saveLanguages(data) {
-  fs.writeFileSync(languagesFile, JSON.stringify(data, null, 2));
+function saveJson(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
-const userLanguages = loadLanguages();
+const userLanguages = loadJson(languagesFile);
+const userOutputModes = loadJson(outputModesFile);
 
 const languages = {
+  ru: "Russian",
   en: "English",
   zh: "Chinese",
   hi: "Hindi",
@@ -36,7 +42,6 @@ const languages = {
   pt: "Portuguese",
   tr: "Turkish",
   ar: "Arabic",
-  ru: "Russian",
   ja: "Japanese",
   ko: "Korean",
   vi: "Vietnamese",
@@ -63,7 +68,8 @@ const mainMenu = {
   reply_markup: {
     keyboard: [
       ["🌍 Выбрать язык", "📌 Текущий язык"],
-      ["ℹ️ Помощь", "🧹 Очистить язык"],
+      ["🔊 Режим ответа", "ℹ️ Помощь"],
+      ["🧹 Очистить язык"],
     ],
     resize_keyboard: true,
   },
@@ -100,7 +106,15 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-console.log("Translator Bot with Menu started...");
+console.log("Translator Bot with output mode started...");
+
+function getTargetLanguage(chatId) {
+  return userLanguages[chatId] || DEFAULT_LANGUAGE;
+}
+
+function getOutputMode(chatId) {
+  return userOutputModes[chatId] || DEFAULT_OUTPUT_MODE;
+}
 
 async function translateText(text, targetLanguage) {
   const result = await openai.chat.completions.create({
@@ -145,12 +159,53 @@ function cleanupFiles(files) {
   }
 }
 
+async function sendTranslation(chatId, translatedText) {
+  const mode = getOutputMode(chatId);
+
+  if (mode === "voice") {
+    const timestamp = Date.now();
+    const mp3Path = path.resolve(`text_speech_${timestamp}.mp3`);
+    const oggPath = path.resolve(`text_speech_${timestamp}.ogg`);
+
+    try {
+      const speech = await openai.audio.speech.create({
+        model: "gpt-4o-mini-tts",
+        voice: "alloy",
+        input: translatedText,
+      });
+
+      fs.writeFileSync(mp3Path, Buffer.from(await speech.arrayBuffer()));
+
+      await new Promise((resolve, reject) => {
+        ffmpeg(mp3Path)
+          .audioCodec("libopus")
+          .format("ogg")
+          .save(oggPath)
+          .on("end", resolve)
+          .on("error", reject);
+      });
+
+      await bot.sendVoice(chatId, oggPath, {
+        caption: `📝 ${translatedText}`,
+        ...mainMenu,
+      });
+    } finally {
+      cleanupFiles([mp3Path, oggPath]);
+    }
+
+    return;
+  }
+
+  await bot.sendMessage(chatId, translatedText, mainMenu);
+}
+
 async function showMainMenu(chatId) {
-  const currentLanguage = userLanguages[chatId] || "English";
+  const currentLanguage = getTargetLanguage(chatId);
+  const outputMode = getOutputMode(chatId) === "voice" ? "🔊 Голос" : "📝 Текст";
 
   await bot.sendMessage(
     chatId,
-    `🤖 AI Translator Bot\n\nТекущий язык перевода: ${currentLanguage}\n\nОтправьте текст, голосовое или картинку с текстом.`,
+    `🤖 AI Translator Bot\n\nТекущий язык перевода: ${currentLanguage}\nФормат ответа: ${outputMode}\n\nОтправьте текст, голосовое или картинку с текстом.`,
     mainMenu
   );
 }
@@ -163,6 +218,19 @@ async function showLanguageMenu(chatId) {
   });
 }
 
+async function showOutputModeMenu(chatId) {
+  await bot.sendMessage(chatId, "🔊 Выберите формат ответа:", {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          { text: "📝 Текст", callback_data: "mode_text" },
+          { text: "🔊 Голос", callback_data: "mode_voice" },
+        ],
+      ],
+    },
+  });
+}
+
 async function showHelp(chatId) {
   await bot.sendMessage(
     chatId,
@@ -170,7 +238,9 @@ async function showHelp(chatId) {
 
 1. Нажмите «🌍 Выбрать язык»
 2. Выберите язык перевода
-3. Отправьте:
+3. Нажмите «🔊 Режим ответа»
+4. Выберите: текст или голос
+5. Отправьте:
    📝 текст
    🎤 голосовое
    🖼 картинку с текстом
@@ -178,10 +248,13 @@ async function showHelp(chatId) {
 Команды:
 /start — главное меню
 /language — выбрать язык
-/status — текущий язык
+/mode — формат ответа
+/status — текущие настройки
 /help — помощь
 
-По умолчанию язык: English`,
+По умолчанию:
+язык — Russian
+ответ — текст`,
     mainMenu
   );
 }
@@ -189,7 +262,8 @@ async function showHelp(chatId) {
 bot.setMyCommands([
   { command: "start", description: "Главное меню" },
   { command: "language", description: "Выбрать язык перевода" },
-  { command: "status", description: "Показать текущий язык" },
+  { command: "mode", description: "Выбрать формат ответа" },
+  { command: "status", description: "Показать настройки" },
   { command: "help", description: "Помощь" },
 ]);
 
@@ -201,11 +275,20 @@ bot.onText(/\/language/, async (msg) => {
   await showLanguageMenu(msg.chat.id);
 });
 
+bot.onText(/\/mode/, async (msg) => {
+  await showOutputModeMenu(msg.chat.id);
+});
+
 bot.onText(/\/status/, async (msg) => {
   const chatId = msg.chat.id;
-  const currentLanguage = userLanguages[chatId] || "English";
+  const currentLanguage = getTargetLanguage(chatId);
+  const outputMode = getOutputMode(chatId) === "voice" ? "🔊 Голос" : "📝 Текст";
 
-  await bot.sendMessage(chatId, `📌 Текущий язык перевода: ${currentLanguage}`, mainMenu);
+  await bot.sendMessage(
+    chatId,
+    `📌 Текущие настройки:\n\nЯзык: ${currentLanguage}\nФормат ответа: ${outputMode}`,
+    mainMenu
+  );
 });
 
 bot.onText(/\/help/, async (msg) => {
@@ -214,29 +297,48 @@ bot.onText(/\/help/, async (msg) => {
 
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
-  const langCode = query.data.replace("lang_", "");
+  const data = query.data;
 
-  if (!languages[langCode]) {
-    await bot.answerCallbackQuery(query.id, {
-      text: "Неизвестный язык",
-    });
+  if (data.startsWith("mode_")) {
+    const mode = data.replace("mode_", "");
+
+    userOutputModes[chatId] = mode;
+    saveJson(outputModesFile, userOutputModes);
+
+    await bot.answerCallbackQuery(query.id);
+    await bot.sendMessage(
+      chatId,
+      `✅ Формат ответа сохранён: ${mode === "voice" ? "🔊 Голос" : "📝 Текст"}`,
+      mainMenu
+    );
     return;
   }
 
-  userLanguages[chatId] = languages[langCode];
-  saveLanguages(userLanguages);
+  if (data.startsWith("lang_")) {
+    const langCode = data.replace("lang_", "");
 
-  await bot.answerCallbackQuery(query.id);
-  await bot.sendMessage(
-    chatId,
-    `✅ Язык сохранён: ${languages[langCode]}\nТеперь можно отправлять текст, голос или картинку.`,
-    mainMenu
-  );
+    if (!languages[langCode]) {
+      await bot.answerCallbackQuery(query.id, {
+        text: "Неизвестный язык",
+      });
+      return;
+    }
+
+    userLanguages[chatId] = languages[langCode];
+    saveJson(languagesFile, userLanguages);
+
+    await bot.answerCallbackQuery(query.id);
+    await bot.sendMessage(
+      chatId,
+      `✅ Язык сохранён: ${languages[langCode]}\nТеперь можно отправлять текст, голос или картинку.`,
+      mainMenu
+    );
+  }
 });
 
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
-  const targetLanguage = userLanguages[chatId] || "English";
+  const targetLanguage = getTargetLanguage(chatId);
 
   if (!msg.text) return;
 
@@ -246,7 +348,17 @@ bot.on("message", async (msg) => {
   }
 
   if (msg.text === "📌 Текущий язык") {
-    await bot.sendMessage(chatId, `📌 Текущий язык перевода: ${targetLanguage}`, mainMenu);
+    const outputMode = getOutputMode(chatId) === "voice" ? "🔊 Голос" : "📝 Текст";
+    await bot.sendMessage(
+      chatId,
+      `📌 Текущие настройки:\n\nЯзык: ${targetLanguage}\nФормат ответа: ${outputMode}`,
+      mainMenu
+    );
+    return;
+  }
+
+  if (msg.text === "🔊 Режим ответа") {
+    await showOutputModeMenu(chatId);
     return;
   }
 
@@ -257,8 +369,16 @@ bot.on("message", async (msg) => {
 
   if (msg.text === "🧹 Очистить язык") {
     delete userLanguages[chatId];
-    saveLanguages(userLanguages);
-    await bot.sendMessage(chatId, "🧹 Язык сброшен. Теперь по умолчанию English.", mainMenu);
+    delete userOutputModes[chatId];
+
+    saveJson(languagesFile, userLanguages);
+    saveJson(outputModesFile, userOutputModes);
+
+    await bot.sendMessage(
+      chatId,
+      "🧹 Настройки сброшены.\nЯзык по умолчанию: Russian\nФормат ответа: текст.",
+      mainMenu
+    );
     return;
   }
 
@@ -267,7 +387,7 @@ bot.on("message", async (msg) => {
   try {
     await bot.sendMessage(chatId, `📝 Перевожу на ${targetLanguage}...`);
     const translatedText = await translateText(msg.text, targetLanguage);
-    await bot.sendMessage(chatId, translatedText, mainMenu);
+    await sendTranslation(chatId, translatedText);
   } catch (error) {
     console.error("Text translation error:", error);
     await bot.sendMessage(chatId, "❌ Ошибка перевода текста.", mainMenu);
@@ -276,7 +396,7 @@ bot.on("message", async (msg) => {
 
 bot.on("photo", async (msg) => {
   const chatId = msg.chat.id;
-  const targetLanguage = userLanguages[chatId] || "English";
+  const targetLanguage = getTargetLanguage(chatId);
 
   const timestamp = Date.now();
   const imagePath = path.resolve(`image_${timestamp}.jpg`);
@@ -318,8 +438,7 @@ bot.on("photo", async (msg) => {
     });
 
     const translatedText = result.choices[0].message.content;
-
-    await bot.sendMessage(chatId, `🖼 Перевод с картинки:\n\n${translatedText}`, mainMenu);
+    await sendTranslation(chatId, `🖼 Перевод с картинки:\n\n${translatedText}`);
   } catch (error) {
     console.error("Image OCR error:", error);
     await bot.sendMessage(chatId, "❌ Ошибка распознавания картинки.", mainMenu);
@@ -330,12 +449,10 @@ bot.on("photo", async (msg) => {
 
 bot.on("voice", async (msg) => {
   const chatId = msg.chat.id;
-  const targetLanguage = userLanguages[chatId] || "English";
+  const targetLanguage = getTargetLanguage(chatId);
 
   const timestamp = Date.now();
   const inputPath = path.resolve(`voice_${timestamp}.ogg`);
-  const mp3Path = path.resolve(`speech_${timestamp}.mp3`);
-  const oggPath = path.resolve(`speech_${timestamp}.ogg`);
 
   try {
     await bot.sendMessage(chatId, `🎧 Перевожу на ${targetLanguage}...`);
@@ -348,31 +465,11 @@ bot.on("voice", async (msg) => {
     });
 
     const translatedText = await translateText(transcription.text, targetLanguage);
-
-    const speech = await openai.audio.speech.create({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy",
-      input: translatedText,
-    });
-
-    fs.writeFileSync(mp3Path, Buffer.from(await speech.arrayBuffer()));
-
-    await new Promise((resolve, reject) => {
-      ffmpeg(mp3Path)
-        .audioCodec("libopus")
-        .format("ogg")
-        .save(oggPath)
-        .on("end", resolve)
-        .on("error", reject);
-    });
-
-    await bot.sendVoice(chatId, oggPath, {
-      caption: `📝 ${translatedText}`,
-    });
+    await sendTranslation(chatId, translatedText);
   } catch (error) {
     console.error("Voice translation error:", error);
     await bot.sendMessage(chatId, "❌ Ошибка обработки голосового.", mainMenu);
   } finally {
-    cleanupFiles([inputPath, mp3Path, oggPath]);
+    cleanupFiles([inputPath]);
   }
 });
