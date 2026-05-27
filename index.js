@@ -108,7 +108,7 @@ async function translateText(text, targetLanguage) {
     messages: [
       {
         role: "system",
-        content: `Translate the user's text into ${targetLanguage}. Return only the translated text.`,
+        content: `You are a professional translator. Automatically detect the source language of the user's text and translate it into ${targetLanguage}. Return only the translated text. Do not explain anything.`,
       },
       {
         role: "user",
