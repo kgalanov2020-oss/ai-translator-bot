@@ -42,22 +42,19 @@ const languages = {
   vi: "Vietnamese",
   th: "Thai",
   id: "Indonesian",
-  ms: "Malay",
-  fa: "Persian",
-  he: "Hebrew",
   pl: "Polish",
-  cs: "Czech",
-  sk: "Slovak",
-  ro: "Romanian",
-  bg: "Bulgarian",
   uk: "Ukrainian",
   nl: "Dutch",
-  sv: "Swedish",
-  no: "Norwegian",
-  da: "Danish",
-  fi: "Finnish",
   el: "Greek",
+  sv: "Swedish",
+  fi: "Finnish",
 };
+
+const keyboard = Object.entries(languages).reduce((rows, [code, name], i) => {
+  if (i % 2 === 0) rows.push([]);
+  rows[rows.length - 1].push({ text: name, callback_data: `lang_${code}` });
+  return rows;
+}, []);
 
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
   polling: true,
@@ -67,7 +64,43 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-console.log("Voice Translator Bot started...");
+console.log("Voice/Text/Image Translator Bot started...");
+
+async function translateText(text, targetLanguage) {
+  const result = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      {
+        role: "system",
+        content: `Translate the user's text into ${targetLanguage}. Return only the translated text.`,
+      },
+      {
+        role: "user",
+        content: text,
+      },
+    ],
+  });
+
+  return result.choices[0].message.content;
+}
+
+async function downloadTelegramFile(fileId, outputPath) {
+  const fileLink = await bot.getFileLink(fileId);
+
+  const response = await axios({
+    url: fileLink,
+    method: "GET",
+    responseType: "stream",
+  });
+
+  const writer = fs.createWriteStream(outputPath);
+  response.data.pipe(writer);
+
+  await new Promise((resolve, reject) => {
+    writer.on("finish", resolve);
+    writer.on("error", reject);
+  });
+}
 
 bot.onText(/\/start/, async (msg) => {
   const chatId = msg.chat.id;
@@ -76,60 +109,12 @@ bot.onText(/\/start/, async (msg) => {
   await bot.sendMessage(
     chatId,
     savedLanguage
-      ? `Текущий язык: ${savedLanguage}\nВыберите новый язык или отправьте голосовое.`
+      ? `Текущий язык: ${savedLanguage}\nВыберите новый язык или отправьте текст, голос или картинку.`
       : "Выберите язык перевода:",
     {
       reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "🇺🇸 English", callback_data: "lang_en" },
-          { text: "🇨🇳 Chinese", callback_data: "lang_zh" },
-        ],
-        [
-          { text: "🇮🇳 Hindi", callback_data: "lang_hi" },
-          { text: "🇭🇺 Hungarian", callback_data: "lang_hu" },
-        ],
-        [
-          { text: "🇪🇸 Spanish", callback_data: "lang_es" },
-          { text: "🇫🇷 French", callback_data: "lang_fr" },
-        ],
-        [
-          { text: "🇩🇪 German", callback_data: "lang_de" },
-          { text: "🇮🇹 Italian", callback_data: "lang_it" },
-        ],
-        [
-          { text: "🇵🇹 Portuguese", callback_data: "lang_pt" },
-          { text: "🇹🇷 Turkish", callback_data: "lang_tr" },
-        ],
-        [
-          { text: "🇦🇪 Arabic", callback_data: "lang_ar" },
-          { text: "🇷🇺 Russian", callback_data: "lang_ru" },
-        ],
-        [
-          { text: "🇯🇵 Japanese", callback_data: "lang_ja" },
-          { text: "🇰🇷 Korean", callback_data: "lang_ko" },
-        ],
-        [
-          { text: "🇻🇳 Vietnamese", callback_data: "lang_vi" },
-          { text: "🇹🇭 Thai", callback_data: "lang_th" },
-        ],
-        [
-          { text: "🇮🇩 Indonesian", callback_data: "lang_id" },
-          { text: "🇲🇾 Malay", callback_data: "lang_ms" },
-        ],
-        [
-          { text: "🇵🇱 Polish", callback_data: "lang_pl" },
-          { text: "🇺🇦 Ukrainian", callback_data: "lang_uk" },
-        ],
-        [
-          { text: "🇳🇱 Dutch", callback_data: "lang_nl" },
-          { text: "🇬🇷 Greek", callback_data: "lang_el" },
-        ],
-        [
-          { text: "🇸🇪 Swedish", callback_data: "lang_sv" },
-          { text: "🇫🇮 Finnish", callback_data: "lang_fi" },
-        ],
-      ]      },
+        inline_keyboard: keyboard,
+      },
     }
   );
 });
@@ -144,20 +129,76 @@ bot.on("callback_query", async (query) => {
   await bot.answerCallbackQuery(query.id);
   await bot.sendMessage(
     chatId,
-    `✅ Язык сохранён: ${languages[langCode]}\nТеперь можно просто отправлять голосовые.`
+    `✅ Язык сохранён: ${languages[langCode]}\nТеперь можно отправлять текст, голос или картинку.`
   );
 });
 
 bot.on("message", async (msg) => {
-  if (msg.text && msg.text !== "/start") {
-    const savedLanguage = userLanguages[msg.chat.id];
+  const chatId = msg.chat.id;
+  const targetLanguage = userLanguages[chatId] || "English";
 
-    await bot.sendMessage(
-      msg.chat.id,
-      savedLanguage
-        ? `Текущий язык: ${savedLanguage}. Отправьте голосовое 🎤`
-        : "Нажмите /start, выберите язык и отправьте голосовое 🎤"
-    );
+  if (msg.text && msg.text !== "/start") {
+    try {
+      await bot.sendMessage(chatId, `📝 Перевожу на ${targetLanguage}...`);
+
+      const translatedText = await translateText(msg.text, targetLanguage);
+
+      await bot.sendMessage(chatId, translatedText);
+    } catch (error) {
+      console.error(error);
+      await bot.sendMessage(chatId, "❌ Ошибка перевода текста.");
+    }
+  }
+});
+
+bot.on("photo", async (msg) => {
+  const chatId = msg.chat.id;
+  const targetLanguage = userLanguages[chatId] || "English";
+
+  const timestamp = Date.now();
+  const imagePath = path.resolve(`image_${timestamp}.jpg`);
+
+  try {
+    await bot.sendMessage(chatId, `🖼 Распознаю текст на картинке и перевожу на ${targetLanguage}...`);
+
+    const photo = msg.photo[msg.photo.length - 1];
+    await downloadTelegramFile(photo.file_id, imagePath);
+
+    const imageBase64 = fs.readFileSync(imagePath, "base64");
+
+    const result = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `Extract all readable text from the image using OCR, then translate it into ${targetLanguage}. Return only the translated text.`,
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Read the image text and translate it.",
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBase64}`,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const translatedText = result.choices[0].message.content;
+
+    await bot.sendMessage(chatId, `🖼 Перевод с картинки:\n\n${translatedText}`);
+
+    if (fs.existsSync(imagePath)) fs.unlinkSync(imagePath);
+  } catch (error) {
+    console.error(error);
+    await bot.sendMessage(chatId, "❌ Ошибка распознавания картинки.");
   }
 });
 
@@ -173,44 +214,14 @@ bot.on("voice", async (msg) => {
   try {
     await bot.sendMessage(chatId, `🎧 Перевожу на ${targetLanguage}...`);
 
-    const fileLink = await bot.getFileLink(msg.voice.file_id);
-
-    const response = await axios({
-      url: fileLink,
-      method: "GET",
-      responseType: "stream",
-    });
-
-    const writer = fs.createWriteStream(inputPath);
-    response.data.pipe(writer);
-
-    await new Promise((resolve, reject) => {
-      writer.on("finish", resolve);
-      writer.on("error", reject);
-    });
+    await downloadTelegramFile(msg.voice.file_id, inputPath);
 
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(inputPath),
       model: "gpt-4o-mini-transcribe",
     });
 
-    const userText = transcription.text;
-
-    const translation = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content: `Translate the user's text into ${targetLanguage}. Return only the translated text.`,
-        },
-        {
-          role: "user",
-          content: userText,
-        },
-      ],
-    });
-
-    const translatedText = translation.choices[0].message.content;
+    const translatedText = await translateText(transcription.text, targetLanguage);
 
     const speech = await openai.audio.speech.create({
       model: "gpt-4o-mini-tts",
@@ -238,6 +249,6 @@ bot.on("voice", async (msg) => {
     });
   } catch (error) {
     console.error(error);
-    await bot.sendMessage(chatId, "❌ Ошибка. Попробуйте ещё раз.");
+    await bot.sendMessage(chatId, "❌ Ошибка обработки голосового.");
   }
 });
