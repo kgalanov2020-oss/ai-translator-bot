@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Live Translator</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar" aria-label="Live translator controls">
+        <div>
+          <p class="eyebrow">AI Translator</p>
+          <h1>Live переводчик</h1>
+        </div>
+
+        <div class="controls">
+          <label>
+            Язык
+            <select id="targetLanguage">
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="it">Italiano</option>
+              <option value="pt">Português</option>
+              <option value="zh">中文</option>
+              <option value="ja">日本語</option>
+              <option value="ko">한국어</option>
+              <option value="ar">العربية</option>
+              <option value="hi">हिन्दी</option>
+              <option value="tr">Türkçe</option>
+            </select>
+          </label>
+
+          <button id="startButton" type="button">Старт</button>
+          <button id="stopButton" type="button" disabled>Стоп</button>
+        </div>
+      </section>
+
+      <section class="status-row" aria-live="polite">
+        <span id="statusDot" class="dot"></span>
+        <span id="statusText">Ожидание</span>
+      </section>
+
+      <section class="transcripts">
+        <article>
+          <h2>Оригинал</h2>
+          <p id="sourceTranscript"></p>
+        </article>
+
+        <article>
+          <h2>Перевод</h2>
+          <p id="translatedTranscript"></p>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

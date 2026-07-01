@@ -1,0 +1,31 @@
+services:
+  - type: worker
+    name: ai-translator-bot
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEFAULT_LANGUAGE
+        value: Russian
+      - key: DEFAULT_OUTPUT_MODE
+        value: text
+      - key: OPENAI_TRANSLATION_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_OCR_MODEL
+        value: gpt-4o-mini
+      - key: OPENAI_TRANSCRIPTION_MODEL
+        value: gpt-4o-mini-transcribe
+      - key: OPENAI_TTS_MODEL
+        value: gpt-4o-mini-tts
+      - key: OPENAI_TTS_VOICE
+        value: alloy
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
