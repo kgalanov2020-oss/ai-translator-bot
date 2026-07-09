@@ -1,5 +1,6 @@
 const startButton = document.querySelector("#startButton");
 const stopButton = document.querySelector("#stopButton");
+const micTestButton = document.querySelector("#micTestButton");
 const targetLanguage = document.querySelector("#targetLanguage");
 const statusDot = document.querySelector("#statusDot");
 const statusText = document.querySelector("#statusText");
@@ -26,6 +27,7 @@ let translatedAudio;
 let eventsChannel;
 let activeTest;
 let translationStarting = false;
+let pendingStartPromise;
 
 const testPhrases = [
   "Привет, как дела?",
@@ -189,11 +191,28 @@ function getFriendlyError(error) {
   return error?.message || "Ошибка live-перевода";
 }
 
-async function startTranslation() {
-  if (peerConnection || translationStarting) return;
+async function requestMicrophone() {
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true,
+    },
+  });
+}
 
+async function startTranslation() {
+  if (peerConnection) return;
+  if (translationStarting && pendingStartPromise) return pendingStartPromise;
+
+  pendingStartPromise = doStartTranslation();
+  return pendingStartPromise;
+}
+
+async function doStartTranslation() {
   translationStarting = true;
   startButton.disabled = true;
+  micTestButton.disabled = true;
   stopButton.disabled = false;
   targetLanguage.disabled = true;
   resetTranscripts();
@@ -202,13 +221,7 @@ async function startTranslation() {
   try {
     const clientSecret = await createClientSecret(targetLanguage.value);
 
-    sourceStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+    sourceStream = await requestMicrophone();
 
     peerConnection = new RTCPeerConnection();
     peerConnection.addTrack(sourceStream.getAudioTracks()[0], sourceStream);
@@ -254,6 +267,8 @@ async function startTranslation() {
     throw error;
   } finally {
     translationStarting = false;
+    pendingStartPromise = undefined;
+    micTestButton.disabled = false;
   }
 }
 
@@ -273,10 +288,26 @@ function stopTranslation() {
 
   startButton.disabled = false;
   stopButton.disabled = true;
+  micTestButton.disabled = false;
   targetLanguage.disabled = false;
 
   if (statusDot.dataset.state !== "error") {
     setStatus("Остановлено", "idle");
+  }
+}
+
+async function testMicrophone() {
+  micTestButton.disabled = true;
+  setStatus("Проверяю микрофон", "connecting");
+
+  try {
+    const stream = await requestMicrophone();
+    stream.getTracks().forEach((track) => track.stop());
+    setStatus("Микрофон разрешен. Теперь можно нажать «Старт» или «Начать тест».", "live");
+  } catch (error) {
+    setStatus(getFriendlyError(error), "error");
+  } finally {
+    micTestButton.disabled = false;
   }
 }
 
@@ -352,6 +383,7 @@ function clearResults() {
 
 startButton.addEventListener("click", startTranslation);
 stopButton.addEventListener("click", stopTranslation);
+micTestButton.addEventListener("click", testMicrophone);
 startTestButton.addEventListener("click", startTest);
 markHeardButton.addEventListener("click", markHeard);
 saveResultButton.addEventListener("click", saveResult);
