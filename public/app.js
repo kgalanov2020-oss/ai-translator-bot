@@ -6,49 +6,12 @@ const statusDot = document.querySelector("#statusDot");
 const statusText = document.querySelector("#statusText");
 const sourceTranscript = document.querySelector("#sourceTranscript");
 const translatedTranscript = document.querySelector("#translatedTranscript");
-const startTestButton = document.querySelector("#startTestButton");
-const markHeardButton = document.querySelector("#markHeardButton");
-const saveResultButton = document.querySelector("#saveResultButton");
-const exportCsvButton = document.querySelector("#exportCsvButton");
-const exportJsonButton = document.querySelector("#exportJsonButton");
-const clearResultsButton = document.querySelector("#clearResultsButton");
-const testScenario = document.querySelector("#testScenario");
-const testPhrase = document.querySelector("#testPhrase");
-const qualityScore = document.querySelector("#qualityScore");
-const activePhrase = document.querySelector("#activePhrase");
-const resultCount = document.querySelector("#resultCount");
-const averageLatency = document.querySelector("#averageLatency");
-const averageQuality = document.querySelector("#averageQuality");
-const resultsTable = document.querySelector("#resultsTable");
 
 let peerConnection;
 let sourceStream;
 let translatedAudio;
 let eventsChannel;
-let activeTest;
 let translationStarting = false;
-let pendingStartPromise;
-
-const testPhrases = [
-  "Привет, как дела?",
-  "Где находится ближайшая станция метро?",
-  "Мне нужна помощь с переводом.",
-  "Сколько это стоит?",
-  "Повторите, пожалуйста, медленнее.",
-  "Я хочу заказать кофе и воду.",
-  "Мы встретимся через десять минут.",
-  "Можно оплатить картой?",
-];
-
-const storedResults = localStorage.getItem("translatorTestResults");
-let testResults = storedResults ? JSON.parse(storedResults) : [];
-
-for (const phrase of testPhrases) {
-  const option = document.createElement("option");
-  option.value = phrase;
-  option.textContent = phrase;
-  testPhrase.append(option);
-}
 
 function setStatus(text, state = "idle") {
   statusText.textContent = text;
@@ -63,80 +26,6 @@ function appendText(node, text) {
 function resetTranscripts() {
   sourceTranscript.textContent = "";
   translatedTranscript.textContent = "";
-}
-
-function formatLatency(milliseconds) {
-  return `${(milliseconds / 1000).toFixed(2)} сек`;
-}
-
-function saveResultsToStorage() {
-  localStorage.setItem("translatorTestResults", JSON.stringify(testResults));
-}
-
-function updateResultsView() {
-  resultsTable.innerHTML = "";
-
-  for (const result of testResults) {
-    const row = document.createElement("tr");
-    const cells = [
-      new Date(result.createdAt).toLocaleTimeString(),
-      result.scenario,
-      result.language,
-      result.phrase,
-      formatLatency(result.latencyMs),
-      `${result.quality}/5`,
-    ];
-
-    for (const cellText of cells) {
-      const cell = document.createElement("td");
-      cell.textContent = cellText;
-      row.append(cell);
-    }
-
-    resultsTable.prepend(row);
-  }
-
-  const count = testResults.length;
-  const avgLatency =
-    count > 0 ? testResults.reduce((sum, item) => sum + item.latencyMs, 0) / count : 0;
-  const avgQuality =
-    count > 0 ? testResults.reduce((sum, item) => sum + item.quality, 0) / count : 0;
-
-  resultCount.textContent = `${count} тестов`;
-  averageLatency.textContent = count > 0 ? `Средняя задержка: ${formatLatency(avgLatency)}` : "Средняя задержка: -";
-  averageQuality.textContent = count > 0 ? `Среднее качество: ${avgQuality.toFixed(1)}/5` : "Среднее качество: -";
-
-  exportCsvButton.disabled = count === 0;
-  exportJsonButton.disabled = count === 0;
-  clearResultsButton.disabled = count === 0;
-}
-
-function downloadFile(filename, content, type) {
-  const blob = new Blob([content], { type });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
-function exportCsv() {
-  const headers = ["createdAt", "scenario", "language", "phrase", "latencyMs", "quality"];
-  const rows = testResults.map((result) =>
-    headers
-      .map((key) => `"${String(result[key]).replaceAll('"', '""')}"`)
-      .join(",")
-  );
-  downloadFile("translator-tests.csv", [headers.join(","), ...rows].join("\n"), "text/csv");
-}
-
-function exportJson() {
-  downloadFile(
-    "translator-tests.json",
-    JSON.stringify(testResults, null, 2),
-    "application/json"
-  );
 }
 
 async function createClientSecret(language) {
@@ -177,7 +66,7 @@ function handleRealtimeEvent(event) {
 
 function getFriendlyError(error) {
   if (error?.name === "NotAllowedError" || error?.message === "Permission denied") {
-    return "Доступ к микрофону запрещен. Откройте страницу в Chrome или Edge, нажмите значок слева от адреса, разрешите микрофон и обновите страницу.";
+    return "Доступ к микрофону запрещен. Нажмите значок слева от адреса, разрешите микрофон и обновите страницу.";
   }
 
   if (error?.name === "NotFoundError") {
@@ -202,14 +91,8 @@ async function requestMicrophone() {
 }
 
 async function startTranslation() {
-  if (peerConnection) return;
-  if (translationStarting && pendingStartPromise) return pendingStartPromise;
+  if (peerConnection || translationStarting) return;
 
-  pendingStartPromise = doStartTranslation();
-  return pendingStartPromise;
-}
-
-async function doStartTranslation() {
   translationStarting = true;
   startButton.disabled = true;
   micTestButton.disabled = true;
@@ -264,11 +147,8 @@ async function doStartTranslation() {
   } catch (error) {
     setStatus(getFriendlyError(error), "error");
     stopTranslation();
-    throw error;
   } finally {
     translationStarting = false;
-    pendingStartPromise = undefined;
-    micTestButton.disabled = false;
   }
 }
 
@@ -303,7 +183,7 @@ async function testMicrophone() {
   try {
     const stream = await requestMicrophone();
     stream.getTracks().forEach((track) => track.stop());
-    setStatus("Микрофон разрешен. Теперь можно нажать «Старт» или «Начать тест».", "live");
+    setStatus("Микрофон разрешен. Можно нажать «Старт».", "live");
   } catch (error) {
     setStatus(getFriendlyError(error), "error");
   } finally {
@@ -311,80 +191,6 @@ async function testMicrophone() {
   }
 }
 
-function startTest() {
-  startTestButton.disabled = true;
-  saveResultButton.disabled = true;
-  markHeardButton.disabled = true;
-
-  if (!peerConnection) {
-    activePhrase.textContent = "Сначала нажмите «Старт», дождитесь статуса «Перевод идет», затем нажмите «Начать тест».";
-    setStatus("Для теста сначала включите live-перевод кнопкой «Старт».", "error");
-    startTestButton.disabled = false;
-    return;
-  }
-
-  activeTest = {
-    startedAt: performance.now(),
-    phrase: testPhrase.value,
-    scenario: testScenario.options[testScenario.selectedIndex].textContent,
-    language: targetLanguage.options[targetLanguage.selectedIndex].textContent,
-  };
-
-  activePhrase.textContent = activeTest.phrase;
-  markHeardButton.disabled = false;
-  saveResultButton.disabled = true;
-  startTestButton.disabled = false;
-  setStatus("Тест начат. Произнесите фразу и нажмите «Услышал перевод».", "live");
-}
-
-function markHeard() {
-  if (!activeTest) return;
-
-  activeTest.latencyMs = Math.round(performance.now() - activeTest.startedAt);
-  activePhrase.textContent = `${activeTest.phrase} — ${formatLatency(activeTest.latencyMs)}`;
-  markHeardButton.disabled = true;
-  saveResultButton.disabled = false;
-  startTestButton.disabled = false;
-}
-
-function saveResult() {
-  if (!activeTest?.latencyMs) return;
-
-  testResults.push({
-    createdAt: new Date().toISOString(),
-    scenario: activeTest.scenario,
-    language: activeTest.language,
-    phrase: activeTest.phrase,
-    latencyMs: activeTest.latencyMs,
-    quality: Number(qualityScore.value),
-  });
-
-  activeTest = undefined;
-  saveResultButton.disabled = true;
-  startTestButton.disabled = false;
-  activePhrase.textContent = "Результат сохранен";
-  saveResultsToStorage();
-  updateResultsView();
-}
-
-function clearResults() {
-  testResults = [];
-  activeTest = undefined;
-  localStorage.removeItem("translatorTestResults");
-  activePhrase.textContent = "Выберите фразу и начните тест";
-  markHeardButton.disabled = true;
-  saveResultButton.disabled = true;
-  updateResultsView();
-}
-
 startButton.addEventListener("click", startTranslation);
 stopButton.addEventListener("click", stopTranslation);
 micTestButton.addEventListener("click", testMicrophone);
-startTestButton.addEventListener("click", startTest);
-markHeardButton.addEventListener("click", markHeard);
-saveResultButton.addEventListener("click", saveResult);
-exportCsvButton.addEventListener("click", exportCsv);
-exportJsonButton.addEventListener("click", exportJson);
-clearResultsButton.addEventListener("click", clearResults);
-
-updateResultsView();

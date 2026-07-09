@@ -57,83 +57,8 @@
         </article>
       </section>
 
-      <section class="test-panel" aria-label="Latency testing">
-        <div class="panel-heading">
-          <div>
-            <p class="eyebrow">MVP Test</p>
-            <h2>Тест задержки и качества</h2>
-          </div>
-
-          <div class="test-actions">
-            <button id="startTestButton" type="button">Начать замер</button>
-            <button id="markHeardButton" type="button" disabled>Услышал перевод</button>
-          </div>
-        </div>
-
-        <div class="test-grid">
-          <label>
-            Условия
-            <select id="testScenario">
-              <option value="near">Рядом с микрофоном</option>
-              <option value="headphones">Bluetooth-наушники</option>
-              <option value="distance">Расстояние 1-2 метра</option>
-              <option value="noise">Шумная комната</option>
-            </select>
-          </label>
-
-          <label>
-            Фраза
-            <select id="testPhrase"></select>
-          </label>
-
-          <label>
-            Качество
-            <select id="qualityScore">
-              <option value="5">5 - отлично</option>
-              <option value="4">4 - хорошо</option>
-              <option value="3">3 - приемлемо</option>
-              <option value="2">2 - плохо</option>
-              <option value="1">1 - не годится</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="phrase-card">
-          <span>Произнесите:</span>
-          <strong id="activePhrase">Выберите фразу и начните тест</strong>
-        </div>
-
-        <div class="test-actions secondary">
-          <button id="saveResultButton" type="button" disabled>Сохранить результат</button>
-          <button id="exportCsvButton" type="button" disabled>CSV</button>
-          <button id="exportJsonButton" type="button" disabled>JSON</button>
-          <button id="clearResultsButton" type="button" disabled>Очистить</button>
-        </div>
-
-        <div class="results-summary">
-          <span id="resultCount">0 тестов</span>
-          <span id="averageLatency">Средняя задержка: -</span>
-          <span id="averageQuality">Среднее качество: -</span>
-        </div>
-
-        <div class="results-table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Время</th>
-                <th>Условия</th>
-                <th>Язык</th>
-                <th>Фраза</th>
-                <th>Задержка</th>
-                <th>Качество</th>
-              </tr>
-            </thead>
-            <tbody id="resultsTable"></tbody>
-          </table>
-        </div>
-      </section>
     </main>
 
-    <script src="/app.js" type="module"></script>
+    <script src="/app.js?v=20260710-1" type="module"></script>
   </body>
 </html>
