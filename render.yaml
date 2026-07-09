@@ -1,4 +1,22 @@
 services:
+  - type: web
+    name: ai-translator-live
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+    autoDeploy: true
+    buildCommand: npm ci
+    startCommand: npm run live
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: OPENAI_REALTIME_TRANSLATION_MODEL
+        value: gpt-realtime-translate
+      - key: OPENAI_API_KEY
+        sync: false
+
   - type: worker
     name: ai-translator-bot
     runtime: node

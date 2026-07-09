@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = Number(process.env.LIVE_TRANSLATOR_PORT || 3000);
+const PORT = Number(process.env.PORT || process.env.LIVE_TRANSLATOR_PORT || 3000);
 const REALTIME_TRANSLATION_MODEL =
   process.env.OPENAI_REALTIME_TRANSLATION_MODEL || "gpt-realtime-translate";
 const SUPPORTED_OUTPUT_LANGUAGES = new Set([
@@ -91,6 +91,6 @@ app.post("/api/realtime-translation/session", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Live translator is running at http://localhost:${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Live translator is running on port ${PORT}`);
 });

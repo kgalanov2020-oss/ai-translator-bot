@@ -89,7 +89,10 @@ npm run audit
 
 ## Deploy To Render
 
-This Telegram bot should run as a Render Background Worker, not as a Web Service. It uses Telegram polling and does not need an HTTP port.
+This project uses two Render services:
+
+- `ai-translator-bot` - Background Worker for the Telegram bot
+- `ai-translator-live` - Web Service for the HTTPS live translator
 
 1. Commit and push the project to GitHub:
 
@@ -112,9 +115,11 @@ OPENAI_API_KEY=your_openai_api_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ```
 
-4. Apply the Blueprint and wait for the worker to deploy.
+`TELEGRAM_BOT_TOKEN` is only needed for `ai-translator-bot`. `OPENAI_API_KEY` is needed for both services.
 
-After Render is live, stop any local `npm start` process. Only one Telegram polling process can use the same bot token.
+4. Apply the Blueprint and wait for both services to deploy.
+
+After Render is live, stop any local `npm start` process. Only one Telegram polling process can use the same bot token. The live translator will be available at the Render HTTPS URL for `ai-translator-live`.
 
 ## Troubleshooting
 
