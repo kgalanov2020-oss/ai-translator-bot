@@ -311,20 +311,16 @@ async function testMicrophone() {
   }
 }
 
-async function startTest() {
+function startTest() {
   startTestButton.disabled = true;
   saveResultButton.disabled = true;
   markHeardButton.disabled = true;
 
   if (!peerConnection) {
-    setStatus("Запускаю live-перевод для теста", "connecting");
-
-    try {
-      await startTranslation();
-    } catch {
-      startTestButton.disabled = false;
-      return;
-    }
+    activePhrase.textContent = "Сначала нажмите «Старт», дождитесь статуса «Перевод идет», затем нажмите «Начать тест».";
+    setStatus("Для теста сначала включите live-перевод кнопкой «Старт».", "error");
+    startTestButton.disabled = false;
+    return;
   }
 
   activeTest = {
