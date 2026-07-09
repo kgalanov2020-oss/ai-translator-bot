@@ -5,11 +5,47 @@ const statusDot = document.querySelector("#statusDot");
 const statusText = document.querySelector("#statusText");
 const sourceTranscript = document.querySelector("#sourceTranscript");
 const translatedTranscript = document.querySelector("#translatedTranscript");
+const startTestButton = document.querySelector("#startTestButton");
+const markHeardButton = document.querySelector("#markHeardButton");
+const saveResultButton = document.querySelector("#saveResultButton");
+const exportCsvButton = document.querySelector("#exportCsvButton");
+const exportJsonButton = document.querySelector("#exportJsonButton");
+const clearResultsButton = document.querySelector("#clearResultsButton");
+const testScenario = document.querySelector("#testScenario");
+const testPhrase = document.querySelector("#testPhrase");
+const qualityScore = document.querySelector("#qualityScore");
+const activePhrase = document.querySelector("#activePhrase");
+const resultCount = document.querySelector("#resultCount");
+const averageLatency = document.querySelector("#averageLatency");
+const averageQuality = document.querySelector("#averageQuality");
+const resultsTable = document.querySelector("#resultsTable");
 
 let peerConnection;
 let sourceStream;
 let translatedAudio;
 let eventsChannel;
+let activeTest;
+
+const testPhrases = [
+  "Привет, как дела?",
+  "Где находится ближайшая станция метро?",
+  "Мне нужна помощь с переводом.",
+  "Сколько это стоит?",
+  "Повторите, пожалуйста, медленнее.",
+  "Я хочу заказать кофе и воду.",
+  "Мы встретимся через десять минут.",
+  "Можно оплатить картой?",
+];
+
+const storedResults = localStorage.getItem("translatorTestResults");
+let testResults = storedResults ? JSON.parse(storedResults) : [];
+
+for (const phrase of testPhrases) {
+  const option = document.createElement("option");
+  option.value = phrase;
+  option.textContent = phrase;
+  testPhrase.append(option);
+}
 
 function setStatus(text, state = "idle") {
   statusText.textContent = text;
@@ -24,6 +60,80 @@ function appendText(node, text) {
 function resetTranscripts() {
   sourceTranscript.textContent = "";
   translatedTranscript.textContent = "";
+}
+
+function formatLatency(milliseconds) {
+  return `${(milliseconds / 1000).toFixed(2)} сек`;
+}
+
+function saveResultsToStorage() {
+  localStorage.setItem("translatorTestResults", JSON.stringify(testResults));
+}
+
+function updateResultsView() {
+  resultsTable.innerHTML = "";
+
+  for (const result of testResults) {
+    const row = document.createElement("tr");
+    const cells = [
+      new Date(result.createdAt).toLocaleTimeString(),
+      result.scenario,
+      result.language,
+      result.phrase,
+      formatLatency(result.latencyMs),
+      `${result.quality}/5`,
+    ];
+
+    for (const cellText of cells) {
+      const cell = document.createElement("td");
+      cell.textContent = cellText;
+      row.append(cell);
+    }
+
+    resultsTable.prepend(row);
+  }
+
+  const count = testResults.length;
+  const avgLatency =
+    count > 0 ? testResults.reduce((sum, item) => sum + item.latencyMs, 0) / count : 0;
+  const avgQuality =
+    count > 0 ? testResults.reduce((sum, item) => sum + item.quality, 0) / count : 0;
+
+  resultCount.textContent = `${count} тестов`;
+  averageLatency.textContent = count > 0 ? `Средняя задержка: ${formatLatency(avgLatency)}` : "Средняя задержка: -";
+  averageQuality.textContent = count > 0 ? `Среднее качество: ${avgQuality.toFixed(1)}/5` : "Среднее качество: -";
+
+  exportCsvButton.disabled = count === 0;
+  exportJsonButton.disabled = count === 0;
+  clearResultsButton.disabled = count === 0;
+}
+
+function downloadFile(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function exportCsv() {
+  const headers = ["createdAt", "scenario", "language", "phrase", "latencyMs", "quality"];
+  const rows = testResults.map((result) =>
+    headers
+      .map((key) => `"${String(result[key]).replaceAll('"', '""')}"`)
+      .join(",")
+  );
+  downloadFile("translator-tests.csv", [headers.join(","), ...rows].join("\n"), "text/csv");
+}
+
+function exportJson() {
+  downloadFile(
+    "translator-tests.json",
+    JSON.stringify(testResults, null, 2),
+    "application/json"
+  );
 }
 
 async function createClientSecret(language) {
@@ -60,6 +170,22 @@ function handleRealtimeEvent(event) {
   if (event.type === "error") {
     setStatus(event.error?.message || "Ошибка live-сессии", "error");
   }
+}
+
+function getFriendlyError(error) {
+  if (error?.name === "NotAllowedError" || error?.message === "Permission denied") {
+    return "Доступ к микрофону запрещен. Откройте страницу в Chrome или Edge, нажмите значок слева от адреса, разрешите микрофон и обновите страницу.";
+  }
+
+  if (error?.name === "NotFoundError") {
+    return "Микрофон не найден. Подключите гарнитуру или выберите микрофон в настройках Windows.";
+  }
+
+  if (error?.name === "NotReadableError") {
+    return "Микрофон занят другой программой. Закройте приложения, которые используют микрофон, и попробуйте снова.";
+  }
+
+  return error?.message || "Ошибка live-перевода";
 }
 
 async function startTranslation() {
@@ -119,7 +245,7 @@ async function startTranslation() {
       sdp: await sdpResponse.text(),
     });
   } catch (error) {
-    setStatus(error.message, "error");
+    setStatus(getFriendlyError(error), "error");
     stopTranslation();
   }
 }
@@ -146,5 +272,65 @@ function stopTranslation() {
   }
 }
 
+function startTest() {
+  activeTest = {
+    startedAt: performance.now(),
+    phrase: testPhrase.value,
+    scenario: testScenario.options[testScenario.selectedIndex].textContent,
+    language: targetLanguage.options[targetLanguage.selectedIndex].textContent,
+  };
+
+  activePhrase.textContent = activeTest.phrase;
+  markHeardButton.disabled = false;
+  saveResultButton.disabled = true;
+  setStatus("Тест начат. Произнесите фразу и нажмите «Услышал перевод».", "live");
+}
+
+function markHeard() {
+  if (!activeTest) return;
+
+  activeTest.latencyMs = Math.round(performance.now() - activeTest.startedAt);
+  activePhrase.textContent = `${activeTest.phrase} — ${formatLatency(activeTest.latencyMs)}`;
+  markHeardButton.disabled = true;
+  saveResultButton.disabled = false;
+}
+
+function saveResult() {
+  if (!activeTest?.latencyMs) return;
+
+  testResults.push({
+    createdAt: new Date().toISOString(),
+    scenario: activeTest.scenario,
+    language: activeTest.language,
+    phrase: activeTest.phrase,
+    latencyMs: activeTest.latencyMs,
+    quality: Number(qualityScore.value),
+  });
+
+  activeTest = undefined;
+  saveResultButton.disabled = true;
+  activePhrase.textContent = "Результат сохранен";
+  saveResultsToStorage();
+  updateResultsView();
+}
+
+function clearResults() {
+  testResults = [];
+  activeTest = undefined;
+  localStorage.removeItem("translatorTestResults");
+  activePhrase.textContent = "Выберите фразу и начните тест";
+  markHeardButton.disabled = true;
+  saveResultButton.disabled = true;
+  updateResultsView();
+}
+
 startButton.addEventListener("click", startTranslation);
 stopButton.addEventListener("click", stopTranslation);
+startTestButton.addEventListener("click", startTest);
+markHeardButton.addEventListener("click", markHeard);
+saveResultButton.addEventListener("click", saveResult);
+exportCsvButton.addEventListener("click", exportCsv);
+exportJsonButton.addEventListener("click", exportJson);
+clearResultsButton.addEventListener("click", clearResults);
+
+updateResultsView();
