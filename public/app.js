@@ -25,6 +25,7 @@ let sourceStream;
 let translatedAudio;
 let eventsChannel;
 let activeTest;
+let translationStarting = false;
 
 const testPhrases = [
   "Привет, как дела?",
@@ -189,6 +190,9 @@ function getFriendlyError(error) {
 }
 
 async function startTranslation() {
+  if (peerConnection || translationStarting) return;
+
+  translationStarting = true;
   startButton.disabled = true;
   stopButton.disabled = false;
   targetLanguage.disabled = true;
@@ -247,6 +251,9 @@ async function startTranslation() {
   } catch (error) {
     setStatus(getFriendlyError(error), "error");
     stopTranslation();
+    throw error;
+  } finally {
+    translationStarting = false;
   }
 }
 
@@ -257,6 +264,7 @@ function stopTranslation() {
   sourceStream = undefined;
   peerConnection = undefined;
   eventsChannel = undefined;
+  translationStarting = false;
 
   if (translatedAudio) {
     translatedAudio.srcObject = null;
@@ -272,7 +280,22 @@ function stopTranslation() {
   }
 }
 
-function startTest() {
+async function startTest() {
+  startTestButton.disabled = true;
+  saveResultButton.disabled = true;
+  markHeardButton.disabled = true;
+
+  if (!peerConnection) {
+    setStatus("Запускаю live-перевод для теста", "connecting");
+
+    try {
+      await startTranslation();
+    } catch {
+      startTestButton.disabled = false;
+      return;
+    }
+  }
+
   activeTest = {
     startedAt: performance.now(),
     phrase: testPhrase.value,
@@ -283,6 +306,7 @@ function startTest() {
   activePhrase.textContent = activeTest.phrase;
   markHeardButton.disabled = false;
   saveResultButton.disabled = true;
+  startTestButton.disabled = false;
   setStatus("Тест начат. Произнесите фразу и нажмите «Услышал перевод».", "live");
 }
 
@@ -293,6 +317,7 @@ function markHeard() {
   activePhrase.textContent = `${activeTest.phrase} — ${formatLatency(activeTest.latencyMs)}`;
   markHeardButton.disabled = true;
   saveResultButton.disabled = false;
+  startTestButton.disabled = false;
 }
 
 function saveResult() {
@@ -309,6 +334,7 @@ function saveResult() {
 
   activeTest = undefined;
   saveResultButton.disabled = true;
+  startTestButton.disabled = false;
   activePhrase.textContent = "Результат сохранен";
   saveResultsToStorage();
   updateResultsView();
